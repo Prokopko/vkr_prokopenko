@@ -1,0 +1,89 @@
+@startuml 07_dataflow
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Times New Roman
+skinparam defaultFontSize 12
+skinparam ArrowColor #3A7CA5
+skinparam RectangleBorderColor #3A7CA5
+skinparam RectangleBackgroundColor #EEF4FB
+skinparam DatabaseBorderColor #5A8AC5
+skinparam DatabaseBackgroundColor #E8F0FE
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #CCAA33
+
+title Потоки данных (DFD)
+
+rectangle "Пользователь" as USER
+
+rectangle "UI: app.py" as UI {
+  rectangle "Форма ввода\nadress / network / options" as FORM
+  rectangle "Рендер результатов\n_render_result()" as RENDER
+}
+
+rectangle "Etherscan Service" as ETH_S {
+  rectangle "get_contract_metadata()" as ETH_GET
+}
+
+rectangle "Scanner Service" as SCAN_S {
+  rectangle "run_scan() /\nfind_cached_result()" as SCAN_F
+}
+
+rectangle "Orchestrator" as ORCH {
+  rectangle "Временный файл\ntmpdir/Contract.sol" as TMP
+}
+
+rectangle "Analyzers" as ANA {
+  rectangle "Slither\nFindings[]" as SL
+  rectangle "Mythril\nFindings[]" as MY
+  rectangle "Semgrep\nFindings[]" as SE
+  rectangle "LLM\nFindings[] + Summary" as LL
+}
+
+rectangle "Normalizer" as NORM {
+  rectangle "Деdup + aggregate_summary()" as DEDUP
+}
+
+database "NocoDB" as DB {
+  rectangle "scan_runs\n(1 строка на аудит)" as T1
+  rectangle "findings\n(N строк на аудит)" as T2
+}
+
+cloud "Etherscan API" as ETHAPI
+cloud "OpenRouter API" as LLMAPI
+
+USER --> FORM : address, network,\noptions{}
+FORM --> ETH_GET : address, network
+ETH_GET --> ETHAPI : GET getsourcecode
+ETHAPI --> ETH_GET : source_code,\nContractName,\nCompilerVersion
+ETH_GET --> SCAN_F : source_code{}
+
+FORM --> SCAN_F : run_scan()
+SCAN_F --> DB : find_cached_run()
+DB --> SCAN_F : cached_result | None
+
+SCAN_F --> ORCH : source_code, options
+ORCH --> TMP : записать .sol
+
+TMP --> SL : contract_path
+TMP --> MY : contract_path
+TMP --> SE : contract_path
+TMP --> LL : contract_path + source_code
+
+SL --> NORM : findings[]
+MY --> NORM : findings[]
+SE --> NORM : findings[]
+LL --> LLMAPI : prompt (source_code)
+LLMAPI --> LL : JSON {findings, verdict}
+LL --> NORM : findings[] + llm_summary
+
+NORM --> DEDUP : merge + deduplicate
+DEDUP --> SCAN_F : scan_result{risk_score,\nfindings, verdict}
+
+SCAN_F --> DB : insert_scan_run()
+SCAN_F --> DB : insert_findings() ×N
+T1 --> T2 : run_id (FK)
+
+SCAN_F --> RENDER : scan_result{}
+RENDER --> USER : Вердикт, риск-скор,\nнаходки, экспорт
+
+@enduml

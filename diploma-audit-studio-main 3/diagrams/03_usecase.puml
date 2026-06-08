@@ -1,0 +1,55 @@
+@startuml 03_usecase
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Times New Roman
+skinparam defaultFontSize 12
+skinparam usecaseBackgroundColor #EEF4FB
+skinparam usecaseBorderColor #3A7CA5
+skinparam actorBorderColor #3A7CA5
+skinparam actorBackgroundColor #FAFAFA
+
+title Диаграмма вариантов использования
+
+left to right direction
+
+actor "Аудитор /\nРазработчик" as USER
+actor "Etherscan API" as ETH <<external>>
+actor "OpenRouter\n(LLM)" as LLM <<external>>
+actor "NocoDB API" as NOCO <<external>>
+
+rectangle "Smart Contract Audit Studio" {
+  usecase "Загрузить контракт\n(адрес / файл / текст)" as UC1
+  usecase "Получить исходный код\nчерез Etherscan" as UC2
+  usecase "Запустить статический анализ\n(Slither)" as UC3
+  usecase "Запустить символьное\nисполнение (Mythril)" as UC4
+  usecase "Запустить поиск по\nправилам (Semgrep)" as UC5
+  usecase "Провести LLM-анализ\n(honeypot / rug pull)" as UC6
+  usecase "Получить риск-скор\nи вердикт" as UC7
+  usecase "Просмотреть\nнаходки по severity" as UC8
+  usecase "Экспортировать\nотчёт (CSV / JSON / PDF)" as UC9
+  usecase "Просмотреть историю\nаудитов" as UC10
+  usecase "Получить результат\nиз кеша" as UC11
+}
+
+USER --> UC1
+USER --> UC10
+
+UC1 ..> UC2 : <<include>>
+UC1 ..> UC11 : <<extend>>\n[адрес уже анализировался]
+UC1 ..> UC3 : <<include>>
+UC1 ..> UC4 : <<include>>
+UC1 ..> UC5 : <<extend>>\n[Semgrep включён]
+UC1 ..> UC6 : <<include>>
+UC3 ..> UC7 : <<include>>
+UC4 ..> UC7 : <<include>>
+UC6 ..> UC7 : <<include>>
+UC7 ..> UC8 : <<include>>
+UC8 ..> UC9 : <<extend>>
+
+UC2 --> ETH
+UC6 --> LLM
+UC1 --> NOCO : сохранить run + findings
+UC10 --> NOCO : загрузить историю
+UC11 --> NOCO : find_cached_run()
+
+@enduml

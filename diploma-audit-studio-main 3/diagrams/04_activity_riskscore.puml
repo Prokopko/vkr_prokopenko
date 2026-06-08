@@ -1,0 +1,74 @@
+@startuml 04_activity_riskscore
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Times New Roman
+skinparam defaultFontSize 12
+skinparam ActivityBackgroundColor #EEF4FB
+skinparam ActivityBorderColor #3A7CA5
+skinparam ArrowColor #555555
+skinparam DiamondBackgroundColor #FFF8E1
+skinparam DiamondBorderColor #CCAA33
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #CCAA33
+skinparam PartitionBorderColor #AAAAAA
+skinparam PartitionBackgroundColor #F5F5F5
+
+title Алгоритм расчёта риск-скора и вынесения вердикта
+
+start
+
+:Получить список findings\nот всех анализаторов;
+
+partition "Нормализация" {
+  :Привести severity к единой шкале\n(critical / high / medium / low / info);
+  :Дедупликация по ключу\n(tool, rule_id, line_start, description);
+  :Отфильтровать quality-категорию\n(не влияет на security-score);
+}
+
+partition "Расчёт риск-скора" {
+  :Подсчёт по уровням серьёзности\nдля security-находок;
+
+  note right
+    N_crit  = count(critical)
+    N_high  = count(high)
+    N_med   = count(medium)
+    N_low   = count(low)
+  end note
+
+  :Взвешенная сумма:
+  score = N_crit×40 + N_high×20 +
+          N_med×10  + N_low×3;
+
+  if (score > 100?) then (да)
+    :score = 100;
+  else (нет)
+    :score остаётся;
+  endif
+}
+
+partition "Вынесение вердикта" {
+  if (score < 20?) then (да)
+    :trust_flag = 1\nverdikt = **trusted**;
+  elseif (score < 50?) then (да)
+    :trust_flag = 0\nverdikt = **warning**;
+  else (нет)
+    :trust_flag = 0\nverdikt = **suspicious**;
+  endif
+}
+
+partition "LLM-вердикт (если включён)" {
+  :LLM возвращает overall_verdict\n(trusted / warning / suspicious);
+  note right
+    LLM-вердикт отображается отдельно
+    и не перекрывает score-вердикт.
+    Показывается рядом в интерфейсе.
+  end note
+}
+
+:Вернуть итоговый объект:
+{risk_score, trust_flag,
+ severity_counts, llm_summary};
+
+stop
+
+@enduml

@@ -1,0 +1,92 @@
+@startuml 02_sequence_analysis
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Times New Roman
+skinparam defaultFontSize 12
+skinparam SequenceArrowColor #3A7CA5
+skinparam SequenceBoxBorderColor #AAAAAA
+skinparam SequenceLifeLineBorderColor #888888
+skinparam SequenceParticipantBorderColor #3A7CA5
+skinparam SequenceParticipantBackgroundColor #EEF4FB
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #CCAA33
+skinparam SequenceGroupBackgroundColor #F0F8FF
+skinparam SequenceGroupBorderColor #3A7CA5
+
+title Последовательность анализа смарт-контракта
+
+actor "Пользователь" as USER
+participant "app.py\n(Streamlit UI)" as APP
+participant "scanner_service" as SCAN
+participant "NocoDB\nClient" as NOCO
+participant "Etherscan\nAPI" as ETHERSCAN
+participant "orchestrator" as ORCH
+participant "slither_runner" as SLITH
+participant "mythril_runner" as MYTH
+participant "llm_runner" as LLM
+participant "normalizer" as NORM
+database "NocoDB\n(scan_runs +\nfindings)" as DB
+
+USER -> APP : Адрес контракта +\nвыбор анализаторов\n+ «Запустить»
+
+APP -> NOCO : find_cached_run(address, network)
+NOCO -> DB : GET /api/v2/tables/{scan_runs}/records\n?where=(address,eq,...) limit=1
+DB --> NOCO : [] или [cached_row]
+NOCO --> APP : None | cached_result
+
+alt Результат найден в кеше
+  APP -> USER : Показ кешированных результатов
+else Анализ необходим
+  APP -> ETHERSCAN : GET /v2/api?module=contract\n&action=getsourcecode&chainid=1
+  ETHERSCAN --> APP : source_code, ContractName,\nCompilerVersion
+
+  APP -> SCAN : run_scan(address, network, options)
+  SCAN -> ORCH : run_contract_analysis(address, network,\nsource_code, options)
+
+  ORCH -> ORCH : Записать source_code\nво временный файл\n(tmpdir/Contract.sol)
+
+  group Параллельные анализаторы (последовательно)
+    ORCH -> SLITH : run_slither(contract_path)
+    SLITH -> SLITH : detect_pragma → pick_solc\n(solcx / SOLC_BIN / PATH)
+    SLITH --> ORCH : findings[] + error?
+
+    ORCH -> MYTH : run_mythril(contract_path)
+    MYTH -> MYTH : detect_pragma_version\nresolve_solc_version\nmyth analyze -o json\n--execution-timeout 60
+    MYTH --> ORCH : findings[] + error?
+
+    ORCH -> LLM : run_llm_review(contract_path,\nsource_code, address, network)
+    LLM -> LLM : POST openrouter.ai/v1/chat/completions\n(temperature=0.2)
+    LLM --> ORCH : findings[] + llm_summary{}
+  end
+
+  ORCH -> NORM : deduplicate_findings(all_findings)
+  NORM --> ORCH : unique_findings[]
+
+  ORCH -> NORM : aggregate_summary(unique_findings)
+  note right of NORM
+    risk_score =
+      critical×40 + high×20 +
+      medium×10 + low×3
+    cap → 100
+    trust_flag = 1 if score < 20
+  end note
+  NORM --> ORCH : {risk_score, trust_flag,\nseverity_counts}
+
+  ORCH --> SCAN : scan_result{}
+  ORCH -> ORCH : Удалить tmpdir
+
+  SCAN -> NOCO : insert_scan_run(run_row)
+  NOCO -> DB : POST /api/v2/tables/{scan_runs}/records
+  DB --> NOCO : {Id: run_id}
+  NOCO --> SCAN : run_id
+
+  SCAN -> NOCO : insert_findings(finding_rows, run_id)
+  loop для каждого finding
+    NOCO -> DB : POST /api/v2/tables/{findings}/records
+  end
+
+  SCAN --> APP : scan_result{}
+  APP -> USER : Вердикт (trusted/warning/suspicious)\nRisk score, findings,\nэкспорт CSV/JSON/PDF
+end
+
+@enduml

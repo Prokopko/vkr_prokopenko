@@ -1,0 +1,86 @@
+@startuml 01_component
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam componentStyle rectangle
+skinparam ArrowColor #555555
+skinparam defaultFontName Times New Roman
+skinparam defaultFontSize 13
+skinparam componentBackgroundColor #EEF4FB
+skinparam componentBorderColor #3A7CA5
+skinparam packageBorderColor #AAAAAA
+skinparam packageBackgroundColor #F5F5F5
+
+title Компонентная архитектура Smart Contract Audit Studio
+
+package "UI Layer (Streamlit)" {
+  [app.py\nГлавная страница] as APP
+  [pages/1_History.py\nИстория аудитов] as HIST
+  [pages/2_Settings.py\nНастройки] as SET
+  [pages/3_Dashboard.py\nДашборд] as DASH
+  [components/layout.py\nCSS / Sidebar] as LAYOUT
+}
+
+package "Services Layer" {
+  [scanner_service.py\nrun_scan() / find_cached_result()] as SCAN
+  [etherscan_service.py\nget_contract_metadata()] as ETH_SVC
+  [nocodb_service.py\nget_recent_runs()] as NOCO_SVC
+  [pdf_report.py\ngenerate_pdf_report()] as PDF
+}
+
+package "Analyzers Layer" {
+  [orchestrator.py\nrun_contract_analysis()] as ORCH
+  [slither_runner.py\nrun_slither()] as SLITH
+  [mythril_runner.py\nrun_mythril()] as MYTH
+  [semgrep_runner.py\nrun_semgrep()] as SEMG
+  [llm_runner.py\nrun_llm_review()] as LLM
+  [normalizer.py\ndeduplicate / aggregate_summary()] as NORM
+}
+
+package "Connectors Layer" {
+  [etherscan_client.py] as ETH_CON
+  [nocodb_client.py\ninsert_scan_run() / find_cached_run()] as NOCO_CON
+}
+
+package "External Services" {
+  [Etherscan API v2\netherscan.io] as ETHERSCAN
+  [NocoDB REST API\napp.nocodb.com] as NOCODB
+  [OpenRouter API\nopenrouter.ai] as OPENROUTER
+  [Slither CLI\n(PATH)] as SLITHER_CLI
+  [Mythril CLI\n/opt/myth-venv] as MYTHRIL_CLI
+  [Semgrep CLI\n(PATH)] as SEMGREP_CLI
+  [solcx\n~/.solcx/] as SOLCX
+}
+
+APP --> SCAN
+APP --> ETH_SVC
+APP --> NOCO_SVC
+APP --> PDF
+APP --> LAYOUT
+
+HIST --> NOCO_SVC
+DASH --> NOCO_SVC
+SET --> NOCO_SVC
+
+SCAN --> ORCH
+SCAN --> NOCO_CON
+
+ORCH --> SLITH
+ORCH --> MYTH
+ORCH --> SEMG
+ORCH --> LLM
+ORCH --> NORM
+
+ETH_SVC --> ETH_CON
+ETH_CON --> ETHERSCAN
+
+NOCO_SVC --> NOCO_CON
+NOCO_CON --> NOCODB
+
+SLITH --> SLITHER_CLI
+SLITH --> SOLCX
+MYTH --> MYTHRIL_CLI
+MYTH --> SOLCX
+SEMG --> SEMGREP_CLI
+LLM --> OPENROUTER
+
+@enduml

@@ -1,0 +1,66 @@
+@startuml 08_db_schema
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Times New Roman
+skinparam defaultFontSize 12
+skinparam ClassBackgroundColor #EEF4FB
+skinparam ClassBorderColor #3A7CA5
+skinparam ClassHeaderBackgroundColor #3A7CA5
+skinparam ClassHeaderFontColor #FFFFFF
+skinparam ArrowColor #555555
+
+title Схема базы данных (NocoDB)
+
+entity "scan_runs" as RUNS {
+  * **Id** : INT [PK, auto]
+  --
+  analyst : VARCHAR
+  address : VARCHAR(42)
+  network : VARCHAR(20)
+  contract_name : VARCHAR
+  compiler_version : VARCHAR
+  source_origin : ENUM(etherscan|upload|manual)
+  status : ENUM(success|partial_success|failed)
+  overall_verdict : ENUM(trusted|warning|suspicious)
+  risk_score : INT [0..100]
+  trust_flag : INT [0|1]
+  tools_used : VARCHAR (comma-separated)
+  summary : TEXT
+  llm_verdict : VARCHAR
+  llm_risk_score : INT
+  source_code : TEXT [до 50 000 символов]
+  CreatedAt : TIMESTAMP
+}
+
+entity "findings" as FINDS {
+  * **Id** : INT [PK, auto]
+  --
+  * run_id : INT [FK → scan_runs.Id]
+  tool : ENUM(slither|mythril|semgrep|llm)
+  rule_id : VARCHAR  ' SWC-107, reentrancy...
+  title : VARCHAR
+  severity_label : ENUM(critical|high|medium|low|info)
+  confidence_label : ENUM(low|medium|high)
+  category : ENUM(security|quality|honeypot)
+  description : TEXT
+  recommendation : TEXT
+  file_path : VARCHAR
+  line_start : INT
+  line_end : INT
+  CreatedAt : TIMESTAMP
+}
+
+RUNS ||--o{ FINDS : "run_id"
+
+note right of RUNS
+  Кеш-запрос:
+  WHERE address=? AND network=?
+  ORDER BY CreatedAt DESC LIMIT 1
+end note
+
+note right of FINDS
+  Дедупликация при записи:
+  (tool, rule_id, line_start, description)
+end note
+
+@enduml

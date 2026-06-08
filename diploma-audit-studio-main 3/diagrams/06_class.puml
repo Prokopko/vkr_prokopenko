@@ -1,0 +1,143 @@
+@startuml 06_class
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Times New Roman
+skinparam defaultFontSize 11
+skinparam ClassBackgroundColor #EEF4FB
+skinparam ClassBorderColor #3A7CA5
+skinparam ClassAttributeIconSize 0
+skinparam ArrowColor #555555
+skinparam PackageBorderColor #AAAAAA
+skinparam PackageBackgroundColor #F8F8F8
+
+title Диаграмма классов (основные модули)
+
+package "orchestrator" {
+  class RunContractAnalysis {
+    + run_contract_analysis(address, network, source_code, options): dict
+    - tmpdir: str
+    - findings: list[dict]
+    - tool_errors: list[dict]
+  }
+}
+
+package "analyzers" {
+  abstract class BaseRunner {
+    + run(contract_path: str): dict
+  }
+
+  class SlitherRunner {
+    - IGNORED_RULES: set
+    + run_slither(contract_path): dict
+    - _detect_pragma(path): str
+    - _pick_solc(pragma): str
+    - _cleanup_slither_text(text): str
+  }
+
+  class MythrilRunner {
+    - TIMEOUT: 60s
+    - MAX_DEPTH: 10
+    + run_mythril(contract_path): dict
+    - _detect_pragma_version(path): str
+    - _resolve_solc_version(major_minor): str
+    - _map_mythril_severity(value): str
+  }
+
+  class SemgrepRunner {
+    - rules_path: str
+    + run_semgrep(contract_path): dict
+  }
+
+  class LLMRunner {
+    - model: str = "openai/gpt-oss-20b"
+    - base_url: str
+    - temperature: float = 0.2
+    + run_llm_review(contract_path, source_code,\n  address, network): dict
+    - _strip_code_fences(text): str
+  }
+
+  class Normalizer {
+    + IGNORED_SLITHER_RULES: set
+    + QUALITY_SLITHER_RULES: set
+    + map_severity(value): str
+    + classify_slither_rule(rule_id): str
+    + deduplicate_findings(findings): list
+    + aggregate_summary(findings): dict
+    ' risk_score = crit×40 + high×20 + med×10 + low×3
+    ' trust_flag = 1 if score < 20
+  }
+}
+
+package "services" {
+  class ScannerService {
+    + run_scan(address, network, options, save_to_nocodb): dict
+    + find_cached_result(address, network): dict | None
+    - _find_cached(address, network): dict | None
+    - _save(scan_result, address, network, options): dict
+    - _detect_origin(options): str
+    - _count_severity(findings): dict
+  }
+
+  class EtherscanService {
+    + get_contract_metadata(address, network): dict
+    ' returns: ok, source_code, contract_name,\n' compiler_version, abi, proxy
+    ' supports: ethereum, base, bsc, arbitrum
+  }
+
+  class NoCDBService {
+    + check_nocodb_config(): str
+    + get_recent_runs(limit, analyst): DataFrame
+  }
+
+  class PdfReportService {
+    + generate_pdf_report(contract_name, address,\n  network, verdict, risk_score,\n  analyst, summary, findings, tools_used): bytes
+  }
+}
+
+package "connectors" {
+  class NocoDBClient {
+    - _BASE_URL: str
+    - _TOKEN: str
+    - TABLE_SCAN_RUNS: str
+    - TABLE_FINDINGS: str
+    + insert_scan_run(data): int
+    + insert_findings(findings: list): None
+    + find_cached_run(address, network): dict | None
+    + get_findings_for_run(run_id): list
+    + get_recent_runs(limit, analyst): list
+    - _post(table_id, payload): dict
+    - _get(table_id, params): list
+  }
+
+  class EtherscanClient {
+    - API_KEY: str
+    - BASE_URL: str = "https://api.etherscan.io/v2/api"
+    - CHAIN_ID_MAP: dict
+    + get_contract_name(address): str
+  }
+}
+
+RunContractAnalysis --> SlitherRunner : вызывает
+RunContractAnalysis --> MythrilRunner : вызывает
+RunContractAnalysis --> SemgrepRunner : вызывает
+RunContractAnalysis --> LLMRunner : вызывает
+RunContractAnalysis --> Normalizer : deduplicate + aggregate
+
+BaseRunner <|-- SlitherRunner
+BaseRunner <|-- MythrilRunner
+BaseRunner <|-- SemgrepRunner
+BaseRunner <|-- LLMRunner
+
+ScannerService --> RunContractAnalysis : делегирует
+ScannerService --> NocoDBClient : кеш + персистентность
+
+EtherscanService --> EtherscanClient
+NoCDBService --> NocoDBClient
+
+note bottom of Normalizer
+  risk_score = min(crit×40 + high×20 + med×10 + low×3, 100)
+  trust_flag = 1 if risk_score < 20 else 0
+  verdict: trusted | warning | suspicious
+end note
+
+@enduml

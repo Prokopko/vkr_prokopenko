@@ -1,0 +1,39 @@
+rules:
+  - id: solidity-tx-origin
+    message: "Использование tx.origin для авторизации небезопасно."
+    severity: ERROR
+    languages: [solidity]
+    patterns:
+      - pattern: tx.origin
+
+  - id: solidity-selfdestruct
+    message: "Использование selfdestruct требует ручной проверки."
+    severity: WARNING
+    languages: [solidity]
+    patterns:
+      - pattern-either:
+          - pattern: selfdestruct(...)
+          - pattern: suicide(...)
+
+  - id: solidity-delegatecall
+    message: "Использование delegatecall повышает риск небезопасного выполнения."
+    severity: WARNING
+    languages: [solidity]
+    patterns:
+      - pattern: $X.delegatecall(...)
+
+  - id: solidity-call-value
+    message: "Низкоуровневый call с передачей value требует ручной проверки."
+    severity: WARNING
+    languages: [solidity]
+    patterns:
+      - pattern-either:
+          - pattern: $X.call.value($V)(...)
+          - pattern: $X.call{value: $V}(...)
+
+  - id: solidity-block-timestamp
+    message: "Использование block.timestamp в чувствительной логике требует проверки."
+    severity: INFO
+    languages: [solidity]
+    patterns:
+      - pattern: block.timestamp

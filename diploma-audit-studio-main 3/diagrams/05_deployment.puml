@@ -1,0 +1,65 @@
+@startuml 05_deployment
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Times New Roman
+skinparam defaultFontSize 12
+skinparam NodeBackgroundColor #EEF4FB
+skinparam NodeBorderColor #3A7CA5
+skinparam ComponentBackgroundColor #F0F8FF
+skinparam ComponentBorderColor #5A8AC5
+skinparam ArrowColor #555555
+skinparam NoteBackgroundColor #FFFBE6
+skinparam NoteBorderColor #CCAA33
+
+title Диаграмма развёртывания
+
+node "Railway Cloud\n(контейнер Docker)" as RAILWAY {
+  node "Docker Container\n(Python 3.11 + Debian)" as CONTAINER {
+    component "Streamlit Server\nport ${PORT:-8501}" as STREAMLIT
+    component "app.py + pages/" as APPCODE
+    component "analyzers/ + services/\nconnectors/" as LOGIC
+
+    node "Виртуальное окружение\n/opt/myth-venv" as MYTHENV {
+      component "Mythril 0.23.x\nmyth binary" as MYTHBINARY
+      component "eth-hash <0.4.0" as ETHHASH_MYTH
+    }
+
+    node "Системное окружение\n(PATH)" as SYSENV {
+      component "Slither 0.10.x\nslither binary" as SLITHERBINARY
+      component "solcx + ~/.solcx/\n(версионные компиляторы solc)" as SOLCX
+      component "Semgrep CLI\nsemgrep binary" as SEMGREPBIN
+      component "eth-hash >=0.5.1" as ETHHASH_SLITH
+    }
+  }
+
+  note right of CONTAINER
+    MYTHRIL_BIN=/opt/myth-venv/bin/myth
+    Решение конфликта eth-hash:
+    Slither: >=0.5.1 (системная)
+    Mythril: <0.4.0 (изолированная venv)
+  end note
+}
+
+cloud "Внешние сервисы" {
+  component "Etherscan API v2\napi.etherscan.io/v2/api\n[chainid: 1,56,8453,42161]" as ETHAPI
+  component "NocoDB\napp.nocodb.com\nREST API v2" as NOCOAPI
+  database "scan_runs\n+ findings tables" as NOCODB
+  component "OpenRouter AI\nopenrouter.ai/api/v1\ngpt-oss-20b" as LLMAPI
+}
+
+node "Браузер пользователя\n(Chrome / Firefox / Safari)" as BROWSER {
+  component "Streamlit Web UI\nHTTP / WebSocket" as WEBUI
+}
+
+BROWSER --> RAILWAY : HTTPS :443\n(Railway proxy → PORT)
+STREAMLIT <--> APPCODE
+APPCODE <--> LOGIC
+LOGIC --> ETHAPI : HTTPS GET\nETHERSCAN_API_KEY
+LOGIC --> NOCOAPI : HTTPS\nxc-token
+NOCOAPI --> NOCODB
+LOGIC --> LLMAPI : HTTPS POST\nOPENROUTER_API_KEY
+LOGIC --> SLITHERBINARY
+LOGIC --> MYTHBINARY : MYTHRIL_BIN
+LOGIC --> SEMGREPBIN
+
+@enduml
